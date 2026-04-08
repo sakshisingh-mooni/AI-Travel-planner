@@ -19,8 +19,11 @@ An AI-powered travel planning app built using CrewAI agents.
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
-
-
+```
 ## 📸 Demo
 
 ![App Screenshot](assets/demo.png)
+
+
+
+
