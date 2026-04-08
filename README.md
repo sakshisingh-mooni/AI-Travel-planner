@@ -22,9 +22,7 @@ streamlit run app.py
 ```
 ## 📸 Demo
 
-<p align="center">
-  <img src="assets/demo.png" width="800"/>
-</p>
+<img src="assets/demo.png" width="100%">
 
 
 
