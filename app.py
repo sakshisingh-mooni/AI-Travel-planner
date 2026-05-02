@@ -1,154 +1,408 @@
 import streamlit as st
-from crew import run_travel_planner
 import json
 import os
-import traceback
-import re
+from datetime import datetime
+from crew import run_travel_planner
 from pdf_generator import generate_pdf
 
-st.set_page_config(page_title="AI Travel Planner", layout="wide")
+# ─────────────────────────────────────────────
+# PAGE CONFIG
+# ─────────────────────────────────────────────
 
-# ---------------- HEADER ----------------
-st.markdown("# 🌍 AI Travel Planner")
-st.caption("Plan smart trips using AI agents ✨")
-st.divider()
+st.set_page_config(
+    page_title="AI Travel Planner",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# ---------------- SESSION STATE ----------------
-if "data" not in st.session_state:
-    st.session_state.data = None
+# ─────────────────────────────────────────────
+# SESSION STATE INIT
+# ─────────────────────────────────────────────
 
-# ---------------- INPUTS ----------------
-col1, col2, col3 = st.columns(3)
+if "conversation_history" not in st.session_state:
+    st.session_state.conversation_history = []
 
-with col1:
-    destination = st.text_input("📍 Destination", placeholder="e.g. Goa")
+if "current_plan" not in st.session_state:
+    st.session_state.current_plan = None
 
-with col2:
-    budget = st.text_input("💰 Budget", placeholder="e.g. 10000 INR")
+if "user_profile" not in st.session_state:
+    st.session_state.user_profile = {
+        "destination": "",
+        "budget": "",
+        "interests": "",
+        "days": 3
+    }
 
-with col3:
-    interests = st.text_input("🎯 Interests", placeholder="beach, nightlife")
+if "user_id" not in st.session_state:
+    # Unique session ID for memory scoping
+    st.session_state.user_id = f"user_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-# ---------------- HELPER FUNCTION ----------------
-def extract_json_from_raw(text):
-    """Extract JSON block from messy CrewAI raw output"""
-    try:
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-    except:
-        return None
-    return None
+if "planning_count" not in st.session_state:
+    st.session_state.planning_count = 0
 
-# ---------------- GENERATE BUTTON ----------------
-if st.button("🚀 Generate Travel Plan"):
+# ─────────────────────────────────────────────
+# SIDEBAR — User Profile + History
+# ─────────────────────────────────────────────
 
-    if not destination or not budget or not interests:
-        st.warning("⚠️ Please fill all fields")
-        st.stop()
+with st.sidebar:
+    st.title("🧳 Travel Planner")
+    st.caption("Powered by Multi-Agent AI")
+    st.divider()
 
-    with st.spinner("🤖 Planning your trip..."):
-        try:
-            result = run_travel_planner(destination, budget, interests)
+    st.subheader("📋 Your Profile")
 
-            st.info("🔍 Processing AI response...")
+    destination = st.text_input(
+        "Destination",
+        value=st.session_state.user_profile["destination"],
+        placeholder="e.g. Tokyo, Japan"
+    )
 
-            data = None
+    budget = st.text_input(
+        "Total Budget",
+        value=st.session_state.user_profile["budget"],
+        placeholder="e.g. ₹80,000 or $1500"
+    )
 
-            # ✅ Handle CrewOutput properly
-            if hasattr(result, "json_dict") and result.json_dict:
-                data = result.json_dict
+    days = st.slider(
+        "Trip Duration (days)",
+        min_value=1,
+        max_value=14,
+        value=st.session_state.user_profile["days"],
+        step=1
+    )
 
-            elif hasattr(result, "raw"):
-                data = extract_json_from_raw(result.raw)
-
-            elif hasattr(result, "tasks_output"):
-                raw_text = str(result.tasks_output)
-                data = extract_json_from_raw(raw_text)
-
-            elif isinstance(result, dict):
-                data = result
-
-            if not data:
-                st.error("❌ Could not extract structured data")
-                st.write(result)
-                st.stop()
-
-            st.session_state.data = data
-            st.success("✅ Travel Plan Ready!")
-
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
-            st.text(traceback.format_exc())
-
-# ---------------- DISPLAY ----------------
-if st.session_state.data:
-
-    data = st.session_state.data
+    interests = st.text_area(
+        "Interests & Preferences",
+        value=st.session_state.user_profile["interests"],
+        placeholder="e.g. street food, history, hiking, budget travel, photography",
+        height=100
+    )
 
     st.divider()
 
-    # 🌄 Banner Image
-    st.image(f"https://source.unsplash.com/1200x400/?{destination},travel")
+    # Refinement input — uses agent memory
+    st.subheader("🔄 Refine Existing Plan")
+    refinement = st.text_input(
+        "Modify current plan",
+        placeholder="e.g. make day 2 cheaper, add more food experiences"
+    )
 
     col1, col2 = st.columns(2)
-
-    # -------- LEFT --------
     with col1:
-        st.subheader("📍 Top Places")
-
-        sites = data.get("sites", [])
-        if isinstance(sites, list):
-            for site in sites[:5]:   # ✅ limit to 5
-                st.markdown(f"- **{site.get('title','Place')}**")
-        else:
-            st.write("Not available")
-
-        st.subheader("🌦️ Weather")
-        st.write(data.get("weather", "Not available"))
-
-    # -------- RIGHT --------
+        plan_btn = st.button("🚀 Plan Trip", use_container_width=True, type="primary")
     with col2:
-        st.subheader("🏨 Hotels")
+        refine_btn = st.button("✏️ Refine", use_container_width=True,
+                               disabled=(st.session_state.current_plan is None))
 
-        hotels = data.get("hotels", [])
-        if isinstance(hotels, list):
-            for h in hotels:
-                if isinstance(h, dict):
-                    st.markdown(f"- **{h.get('title')}**: {h.get('description')}")
-                else:
-                    st.markdown(f"- {h}")
-
-        st.subheader("💰 Budget")
-        st.write(data.get("budget", "Not available"))
-
-    # -------- ITINERARY --------
     st.divider()
-    st.subheader("🗺️ 3-Day Plan")
 
-    for i in range(1, 4):
-        st.markdown(f"**Day {i}:** {data.get(f'day{i}', 'Not available')}")
+    # Session history
+    if st.session_state.conversation_history:
+        st.subheader("📜 Session History")
+        for i, entry in enumerate(st.session_state.conversation_history):
+            st.caption(f"**{i+1}.** {entry['destination']} — {entry['days']}d — {entry['timestamp']}")
 
-    # -------- PDF --------
-    st.divider()
-    st.subheader("📄 Export")
+    if st.button("🗑️ Clear Session", use_container_width=True):
+        st.session_state.conversation_history = []
+        st.session_state.current_plan = None
+        st.session_state.planning_count = 0
+        st.rerun()
 
-    try:
-        pdf_file = generate_pdf(data)
+# ─────────────────────────────────────────────
+# MAIN AREA
+# ─────────────────────────────────────────────
 
-        if os.path.exists(pdf_file):
-            with open(pdf_file, "rb") as f:
-                st.download_button(
-                    "📄 Download PDF",
-                    f,
-                    file_name="travel_plan.pdf"
-                )
+st.title("🌍 AI Travel Planner")
+st.caption("A multi-agent AI system that thinks, plans, budgets, and reviews your trip.")
+
+# ─────────────────────────────────────────────
+# PLAN GENERATION
+# ─────────────────────────────────────────────
+
+def validate_inputs(destination, budget, interests, days):
+    errors = []
+    if not destination.strip():
+        errors.append("Please enter a destination.")
+    if not budget.strip():
+        errors.append("Please enter a budget.")
+    if not interests.strip():
+        errors.append("Please enter your interests.")
+    if days < 1:
+        errors.append("Trip must be at least 1 day.")
+    return errors
+
+
+def display_plan(plan):
+    """Render the travel plan in a structured, readable layout."""
+
+    if not plan:
+        st.error("Could not generate a plan. Please try again.")
+        return
+
+    # ── Header ──
+    st.success(f"✅ Plan ready for **{plan.get('destination', 'your destination')}** — {plan.get('total_days', days)} days")
+
+    # ── Critic verdict ──
+    critic = plan.get("critic_notes", "")
+    verdict = plan.get("verdict", "")
+    quality = plan.get("overall_quality_score", "")
+
+    if verdict or quality:
+        with st.expander("🔍 AI Quality Review", expanded=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                if verdict == "APPROVED":
+                    st.success(f"Verdict: {verdict}")
+                elif verdict == "NEEDS REVISION":
+                    st.warning(f"Verdict: {verdict}")
+            with col2:
+                if quality:
+                    st.metric("Quality Score", f"{quality}/10")
+            if critic:
+                st.write(critic)
+            issues = plan.get("issues_found", [])
+            if issues:
+                st.write("**Issues found:**")
+                for issue in issues:
+                    st.write(f"• {issue}")
+
+    # ── Tabs ──
+    tab1, tab2, tab3, tab4 = st.tabs(["📅 Itinerary", "💰 Budget", "🗺️ Destination Info", "💡 Tips"])
+
+    with tab1:
+        daily = plan.get("daily_itinerary", {})
+        if not daily:
+            st.info("Itinerary data not available.")
         else:
-            st.error("PDF generation failed")
+            for day_key, day_data in daily.items():
+                day_num = day_key.replace("day_", "Day ")
+                theme = day_data.get("theme", "") if isinstance(day_data, dict) else ""
+                header = f"**{day_num.capitalize()}**" + (f" — *{theme}*" if theme else "")
+                with st.expander(header, expanded=(day_key == "day_1")):
+                    if isinstance(day_data, dict):
+                        for period in ["morning", "afternoon", "evening"]:
+                            period_data = day_data.get(period, {})
+                            if period_data and isinstance(period_data, dict):
+                                icon = {"morning": "🌅", "afternoon": "☀️", "evening": "🌙"}[period]
+                                st.markdown(f"{icon} **{period.capitalize()}**")
+                                st.write(f"📍 {period_data.get('activity', '')} — {period_data.get('location', '')}")
+                                cost = period_data.get("estimated_cost", "")
+                                duration = period_data.get("duration_hours", "")
+                                tip = period_data.get("tips", "")
+                                if cost:
+                                    st.caption(f"💸 {cost}" + (f"  |  ⏱ {duration}h" if duration else ""))
+                                if tip:
+                                    st.info(f"💡 {tip}", icon="💡")
+                                st.write("")
+                        daily_total = day_data.get("daily_total_estimate", "")
+                        if daily_total:
+                            st.success(f"**Estimated day total: {daily_total}**")
+                    else:
+                        st.write(day_data)
 
-    except Exception as e:
-        st.error(f"PDF Error: {e}")
+    with tab2:
+        breakdown = plan.get("budget_breakdown", plan.get("breakdown", {}))
+        sufficient = plan.get("is_budget_sufficient", True)
 
-# ---------------- FOOTER ----------------
-st.markdown("---")
-st.caption("🚀 Built with CrewAI + Gemini")
+        if not sufficient:
+            realistic = plan.get("realistic_minimum_if_insufficient", "")
+            st.warning(f"⚠️ Your budget may be tight. Realistic minimum: **{realistic}**")
+
+        if breakdown:
+            cols = st.columns(3)
+            items = list(breakdown.items())
+            for i, (k, v) in enumerate(items):
+                with cols[i % 3]:
+                    label = k.replace("_", " ").title()
+                    if isinstance(v, dict):
+                        val = v.get("total", v.get("estimated", str(v)))
+                        note = v.get("notes", "")
+                    else:
+                        val = str(v)
+                        note = ""
+                    st.metric(label, val)
+                    if note:
+                        st.caption(note)
+
+        tips = plan.get("money_saving_tips", [])
+        if tips:
+            st.subheader("💡 Money-Saving Tips")
+            for tip in tips:
+                st.write(f"• {tip}")
+
+        total_est = plan.get("total_estimated_cost", "")
+        if total_est:
+            st.info(f"**Total estimated cost: {total_est}**")
+
+    with tab3:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            weather = plan.get("weather", "")
+            if weather:
+                st.subheader("🌤️ Weather")
+                st.write(weather)
+
+            sites = plan.get("top_sites", plan.get("sites", []))
+            if sites:
+                st.subheader("🏛️ Top Attractions")
+                for site in sites:
+                    if isinstance(site, dict):
+                        st.write(f"**{site.get('name', '')}**")
+                        st.caption(site.get("description", ""))
+                    else:
+                        st.write(f"• {site}")
+
+        with col2:
+            hotels = plan.get("hotel_areas", plan.get("hotels", []))
+            if hotels:
+                st.subheader("🏨 Recommended Stay Areas")
+                for h in hotels:
+                    if isinstance(h, dict):
+                        st.write(f"**{h.get('area', h.get('name', ''))}**")
+                        st.caption(h.get("why", h.get("price_range_per_night", "")))
+                    else:
+                        st.write(f"• {h}")
+
+            food = plan.get("food_highlights", [])
+            if food:
+                st.subheader("🍜 Food Highlights")
+                for item in food:
+                    st.write(f"• {item}")
+
+    with tab4:
+        col1, col2 = st.columns(2)
+        with col1:
+            safety = plan.get("safety_tips", [])
+            if safety:
+                st.subheader("🛡️ Safety Tips")
+                for tip in safety:
+                    st.write(f"• {tip}")
+
+            cultural = plan.get("cultural_notes", [])
+            if cultural:
+                st.subheader("🎎 Cultural Notes")
+                for note in cultural:
+                    st.write(f"• {note}")
+
+        with col2:
+            gems = plan.get("hidden_gems", [])
+            if gems:
+                st.subheader("💎 Hidden Gems")
+                for gem in gems:
+                    st.write(f"• {gem}")
+
+            packing = plan.get("packing_tips", [])
+            if packing:
+                st.subheader("🎒 Packing Tips")
+                for tip in packing:
+                    st.write(f"• {tip}")
+
+    # ── PDF Export ──
+    st.divider()
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("📄 Export PDF", use_container_width=True):
+            with st.spinner("Generating PDF..."):
+                pdf_path = generate_pdf(plan)
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        "⬇️ Download PDF",
+                        data=f,
+                        file_name=f"travel_plan_{plan.get('destination','trip').replace(' ','_')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+
+
+# ─────────────────────────────────────────────
+# BUTTON HANDLERS
+# ─────────────────────────────────────────────
+
+if plan_btn:
+    errors = validate_inputs(destination, budget, interests, days)
+    if errors:
+        for e in errors:
+            st.error(e)
+    else:
+        # Save to session profile
+        st.session_state.user_profile = {
+            "destination": destination,
+            "budget": budget,
+            "interests": interests,
+            "days": days
+        }
+
+        st.session_state.planning_count += 1
+
+        with st.spinner(f"🤖 Agents are planning your {days}-day trip to {destination}... This takes 1-2 minutes."):
+            try:
+                plan = run_travel_planner(
+                    destination=destination,
+                    budget=budget,
+                    interests=interests,
+                    days=days,
+                    user_id=st.session_state.user_id
+                )
+                st.session_state.current_plan = plan
+
+                # Save to conversation history
+                st.session_state.conversation_history.append({
+                    "destination": destination,
+                    "days": days,
+                    "budget": budget,
+                    "timestamp": datetime.now().strftime("%H:%M"),
+                    "plan": plan
+                })
+
+            except Exception as e:
+                st.error(f"Planning failed: {str(e)}")
+                st.info("If you're hitting API rate limits, wait 60 seconds and try again.")
+                st.stop()
+
+if refine_btn and refinement.strip() and st.session_state.current_plan:
+    # Build refined query — agents will use memory of previous run
+    refined_interests = f"{interests}. REFINEMENT REQUEST: {refinement}"
+
+    with st.spinner(f"🔄 Agents are refining your plan based on: '{refinement}'..."):
+        try:
+            plan = run_travel_planner(
+                destination=destination,
+                budget=budget,
+                interests=refined_interests,
+                days=days,
+                user_id=st.session_state.user_id  # Same user_id = agents recall previous run
+            )
+            st.session_state.current_plan = plan
+
+            st.session_state.conversation_history.append({
+                "destination": f"{destination} (refined)",
+                "days": days,
+                "budget": budget,
+                "timestamp": datetime.now().strftime("%H:%M"),
+                "plan": plan
+            })
+
+        except Exception as e:
+            st.error(f"Refinement failed: {str(e)}")
+
+# ─────────────────────────────────────────────
+# DISPLAY
+# ─────────────────────────────────────────────
+
+if st.session_state.current_plan:
+    display_plan(st.session_state.current_plan)
+else:
+    # Landing state
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.info("**🧠 Manager Agent**\nOrchestrates the full plan — thinks before delegating")
+    with col2:
+        st.info("**🔍 Researcher + Budget Analyst**\nSearch the web for real, current data")
+    with col3:
+        st.info("**🗓️ Itinerary Builder + Critic**\nBuilds your plan, then reviews it for quality")
+
+    st.markdown("---")
+    st.caption("Enter your trip details in the sidebar and click **Plan Trip** to start.")

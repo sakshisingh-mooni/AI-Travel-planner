@@ -1,4 +1,7 @@
-crewai
-crewai_tools
-streamlit
-python-dotenv
+langgraph>=0.2.0
+langchain-groq>=0.1.0
+langchain-core>=0.2.0
+streamlit>=1.35.0
+python-dotenv>=1.0.0
+fpdf2>=2.7.0
+requests>=2.31.0
