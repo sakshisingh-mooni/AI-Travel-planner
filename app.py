@@ -2,8 +2,19 @@ import streamlit as st
 import json
 import os
 from datetime import datetime
-from crew import run_travel_planner
-from pdf_generator import generate_pdf
+
+@st.cache_resource(show_spinner="Loading AI agents... (first load only)")
+def load_planner():
+    from crew import run_travel_planner
+    return run_travel_planner
+
+@st.cache_resource(show_spinner=False)
+def load_pdf_generator():
+    from pdf_generator import generate_pdf
+    return generate_pdf
+
+run_travel_planner = load_planner()
+generate_pdf = load_pdf_generator()
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG

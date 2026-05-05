@@ -14,19 +14,25 @@ load_dotenv()
 # LLM SETUP
 # ─────────────────────────────────────────────
 
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    api_key=os.environ["GROQ_API_KEY"],
-    temperature=0.3,
-    max_tokens=1500
-)
+from functools import lru_cache
 
-manager_llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    api_key=os.environ["GROQ_API_KEY"],
-    temperature=0.1,
-    max_tokens=800
-)
+@lru_cache(maxsize=1)
+def get_llm():
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        api_key=os.environ["GROQ_API_KEY"],
+        temperature=0.3,
+        max_tokens=1500
+    )
+
+@lru_cache(maxsize=1)
+def get_manager_llm():
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        api_key=os.environ["GROQ_API_KEY"],
+        temperature=0.1,
+        max_tokens=800
+    )
 
 # ─────────────────────────────────────────────
 # WEB SEARCH
@@ -125,7 +131,7 @@ Return ONLY valid JSON:
   "safety_tips": ["tip1"]
 }}"""
 
-    response = llm.invoke([HumanMessage(content=prompt)])
+    response = get_llm().invoke([HumanMessage(content=prompt)])
     data = extract_json(response.content)
 
     if not data:
@@ -173,7 +179,7 @@ Return ONLY valid JSON:
   "money_saving_tips": ["tip1", "tip2"]
 }}"""
 
-    response = llm.invoke([HumanMessage(content=prompt)])
+    response = get_llm().invoke([HumanMessage(content=prompt)])
     data = extract_json(response.content)
 
     if not data:
@@ -209,32 +215,38 @@ def itinerary_node(state: TravelState) -> dict:
     for i in range(1, days + 1):
         days_json[f"day_{i}"] = {
             "theme": f"Day {i} theme",
-            "morning": {"activity": "", "location": "", "cost": "", "tip": ""},
-            "afternoon": {"activity": "", "location": "", "cost": "", "tip": ""},
-            "evening": {"activity": "", "location": "", "cost": ""},
+            "morning": {"activity": "", "location": "", "estimated_cost": "", "tip": ""},
+            "afternoon": {"activity": "", "location": "", "estimated_cost": "", "tip": ""},
+            "evening": {"activity": "", "location": "", "estimated_cost": ""},
             "day_total": ""
         }
 
     prompt = f"""You are an expert travel itinerary planner.
-Create a complete {days}-day itinerary for {destination}.
+    Create a complete {days}-day itinerary for {destination}.
 
-RESEARCH: {research[:600]}
-BUDGET: {budget_info[:400]}
-Interests: {interests}, Budget: {budget}
-{revision_note}
+    RESEARCH: {research[:600]}
+    BUDGET: {budget_info[:400]}
+    Interests: {interests}, Total Budget: {budget}
+    {revision_note}
 
-Return ONLY valid JSON with EXACTLY {days} days (day_1 through day_{days}):
-{{
-  "destination": "{destination}",
-  "total_days": {days},
-  "daily_itinerary": {json.dumps(days_json, indent=2)},
-  "accommodation": {{"name": "", "area": "", "price_per_night": ""}},
-  "top_restaurants": ["r1", "r2"],
-  "packing_tips": ["tip1", "tip2"],
-  "transport_tips": ""
-}}"""
+    STRICT RULES:
+    - Every activity MUST have a realistic "estimated_cost" in the local currency of {destination} (e.g. "$20", "€15", "₹500", "free")
+    - day_total MUST be a realistic sum of morning + afternoon + evening costs with currency symbol
+    - accommodation price_per_night MUST be a realistic amount in local currency of {destination}
+    - Do NOT leave any cost field empty or as an empty string
 
-    response = llm.invoke([HumanMessage(content=prompt)])
+    Return ONLY valid JSON with EXACTLY {days} days (day_1 through day_{days}):
+    {{
+    "destination": "{destination}",
+    "total_days": {days},
+    "daily_itinerary": {json.dumps(days_json, indent=2)},
+    "accommodation": {{"name": "", "area": "", "price_per_night": ""}},
+    "top_restaurants": ["r1", "r2"],
+    "packing_tips": ["tip1", "tip2"],
+    "transport_tips": ""
+    }}"""
+
+    response = get_llm().invoke([HumanMessage(content=prompt)])
     data = extract_json(response.content)
 
     if not data:
@@ -242,7 +254,8 @@ Return ONLY valid JSON with EXACTLY {days} days (day_1 through day_{days}):
                 "daily_itinerary": days_json, "accommodation": {},
                 "top_restaurants": [], "packing_tips": [], "transport_tips": ""}
 
-    new_revision_count = revision_count + 1 if revision_count > 0 else revision_count
+    new_revision_count = revision_count + 1
+    print(f"[ITINERARY NODE] revision_count now: {new_revision_count}")
 
     return {
         "itinerary_data": json.dumps(data),
@@ -264,7 +277,7 @@ def critic_node(state: TravelState) -> dict:
     revision_count = state.get("revision_count", 0)
 
     force_approve = ""
-    if revision_count >= 1:
+    if revision_count >= 2:
         force_approve = 'IMPORTANT: Return "APPROVED" as verdict.'
 
     prompt = f"""You are a travel plan quality critic.
@@ -273,7 +286,12 @@ Review this plan strictly. {force_approve}
 ITINERARY: {itinerary[:800]}
 BUDGET: {budget_info[:300]}
 
-Check: {days} days, interests={interests}, budget={budget}, destination={destination}
+Check ALL of the following strictly:
+1. Day count is exactly {days} days
+2. Interests ({interests}) are reflected in activities
+3. Total estimated costs fit within the user's budget of {budget} — convert to local currency of {destination} if needed for comparison
+4. EVERY activity has a non-empty cost field with a realistic amount in local currency — if ANY cost field is empty, add "missing_costs" to issues_found
+If issues_found is non-empty, verdict MUST be "NEEDS REVISION".
 
 Return ONLY valid JSON:
 {{
@@ -286,7 +304,7 @@ Return ONLY valid JSON:
   "quality_score": 8
 }}"""
 
-    response = manager_llm.invoke([HumanMessage(content=prompt)])
+    response = get_manager_llm().invoke([HumanMessage(content=prompt)])
     data = extract_json(response.content)
 
     if not data:
@@ -294,6 +312,7 @@ Return ONLY valid JSON:
                 "critic_notes": "Plan looks acceptable.", "issues_found": []}
 
     verdict = data.get("verdict", "APPROVED")
+    print(f"[CRITIC NODE] verdict: {verdict} | revision_count: {revision_count}")
 
     return {"critic_data": json.dumps(data), "verdict": verdict}
 
@@ -345,7 +364,7 @@ def assembler_node(state: TravelState) -> dict:
 def should_revise(state: TravelState) -> str:
     verdict = state.get("verdict", "APPROVED")
     revision_count = state.get("revision_count", 0)
-    if verdict == "NEEDS REVISION" and revision_count < 1:
+    if verdict == "NEEDS REVISION" and revision_count < 2:
         return "revise"
     return "approve"
 
@@ -387,8 +406,9 @@ def build_graph():
 
 def run_travel_planner(destination: str, budget: str, interests: str,
                        days: int, user_id: str = "default") -> dict:
+    print(f"\n[PLANNER START] {destination} | {days} days | {budget}")
     graph = build_graph()
-
+    
     initial_state: TravelState = {
         "destination": destination,
         "budget": budget,
