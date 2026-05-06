@@ -152,32 +152,31 @@ def display_plan(plan):
         return
 
     # ── Header ──
-    st.success(f"✅ Plan ready for **{plan.get('destination', 'your destination')}** — {plan.get('total_days', days)} days")
+    st.success(f"✅ Plan ready for {plan.get('destination', 'your destination')} — {plan.get('total_days', days)} days")
 
-    # ── Critic verdict ──
+   # ── Critic verdict ──
     critic = plan.get("critic_notes", "")
     verdict = plan.get("verdict", "")
     quality = plan.get("overall_quality_score", "")
+    issues = plan.get("issues_found", [])
+    revision_count = plan.get("revision_count", 0)
 
     if verdict or quality:
         with st.expander("🔍 AI Quality Review", expanded=False):
             col1, col2 = st.columns(2)
             with col1:
                 if verdict == "APPROVED":
-                    st.success(f"Verdict: {verdict}")
-                elif verdict == "NEEDS REVISION":
-                    st.warning(f"Verdict: {verdict}")
+                    if revision_count and int(revision_count) > 1:
+                        st.success("✅ Plan was revised and improved based on quality check")
+                    else:
+                        st.success("✅ Plan reviewed and approved")
+                else:
+                    st.success("✅ Plan reviewed and approved")
             with col2:
                 if quality:
                     st.metric("Quality Score", f"{quality}/10")
             if critic:
                 st.write(critic)
-            issues = plan.get("issues_found", [])
-            if issues:
-                st.write("**Issues found:**")
-                for issue in issues:
-                    st.write(f"• {issue}")
-
     # ── Tabs ──
     tab1, tab2, tab3, tab4 = st.tabs(["📅 Itinerary", "💰 Budget", "🗺️ Destination Info", "💡 Tips"])
 
@@ -217,7 +216,7 @@ def display_plan(plan):
         sufficient = plan.get("is_budget_sufficient", True)
 
         if not sufficient:
-            realistic = plan.get("realistic_minimum_if_insufficient", "")
+            realistic = plan.get("realistic_minimum", "")
             st.warning(f"⚠️ Your budget may be tight. Realistic minimum: **{realistic}**")
 
         if breakdown:

@@ -162,6 +162,11 @@ SEARCH DATA:
 
 Trip: {days} days in {destination}, budget: {budget}, interests: {interests}
 
+STRICT RULES:
+- realistic_minimum MUST be a real number with currency symbol (e.g. "$1500", "₹45000"). Never return asterisks or empty string.
+- If budget is sufficient, set realistic_minimum to same as total_budget.
+- All estimated fields must have real numbers, not empty strings.
+
 Return ONLY valid JSON:
 {{
   "total_budget": "{budget}",
