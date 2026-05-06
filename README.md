@@ -14,6 +14,8 @@ An intelligent travel planning application built on a **5-node LangGraph StateGr
 
 ---
 
+🚀 **Live Demo**: [Try it here](https://huggingface.co/spaces/Sakshisingh2710/AI-Travel-Planner)
+
 ## 📸 Demo
 
 ![AI Travel Planner Demo](assets/demo.png)
