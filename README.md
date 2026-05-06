@@ -1,3 +1,13 @@
+---
+title: AI Travel Planner
+emoji: 🌍
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+app_file: app.py
+pinned: false
+---
+
 # 🌍 AI Travel Planner — Multi-Agent System using LangGraph
 
 An intelligent travel planning application built on a **5-node LangGraph StateGraph pipeline** with a real conditional feedback loop. Agents reason, search the web, critique the plan, and revise — not just pass tasks along.
