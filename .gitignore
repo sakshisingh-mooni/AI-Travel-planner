@@ -32,3 +32,4 @@ Thumbs.db
 
 # Streamlit
 .streamlit/
+"assets/*.png" 
