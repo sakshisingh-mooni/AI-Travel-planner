@@ -18,8 +18,11 @@ An intelligent travel planning application built on a **5-node LangGraph StateGr
 
 ## 📸 Demo
 
-![AI Travel Planner Demo](assets/demo.png)
+### Itinerary View
+![Itinerary](assets/demo_1.png)
 
+### Budget Breakdown
+![Budget](assets/demo.png)
 ---
 
 ## 🏗️ Architecture
